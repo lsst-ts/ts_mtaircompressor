@@ -26,11 +26,10 @@ import asyncio
 import typing
 
 import pymodbus.exceptions
-from lsst.ts import salobj, utils
 from pymodbus.client.tcp import AsyncModbusTcpClient as ModbusClient
-from pymodbus.constants import Endian
-from pymodbus.payload import BinaryPayloadDecoder
-from pymodbus.server.async_io import ModbusTcpServer
+from pymodbus.server import ModbusTcpServer
+
+from lsst.ts import salobj, utils
 
 from . import __version__
 from .aircompressor_model import MTAirCompressorModel
@@ -47,6 +46,22 @@ SLEEP_RECONNECT = 5
 
 """Sleep for this number of seconds after catching an exception."""
 SLEEP_EXCEPTION = 2
+
+
+def decode_int16(reg: int) -> int:
+    return ModbusClient.convert_from_registers([reg], data_type=ModbusClient.DATATYPE.INT16, word_order="big")
+
+
+def decode_uint16(reg: int) -> int:
+    return ModbusClient.convert_from_registers(
+        [reg], data_type=ModbusClient.DATATYPE.UINT16, word_order="big"
+    )
+
+
+def decode_uint32(reg: int) -> int:
+    return ModbusClient.convert_from_registers(
+        [reg], data_type=ModbusClient.DATATYPE.UINT32, word_order="big"
+    )
 
 
 class MTAirCompressorCsc(salobj.ConfigurableCsc):
@@ -135,14 +150,10 @@ class MTAirCompressorCsc(salobj.ConfigurableCsc):
             help="TCP/IP port of the compressor ModbusRTU/TCP convertor."
             "Defaults to 502 (default Modbus TCP/IP port)",
         )
-        parser.add_argument(
-            "--unit", type=int, default=None, help="modbus unit address"
-        )
+        parser.add_argument("--unit", type=int, default=None, help="modbus unit address")
 
     @classmethod
-    def add_kwargs_from_args(
-        cls, args: argparse.Namespace, kwargs: dict[str, typing.Any]
-    ) -> None:
+    def add_kwargs_from_args(cls, args: argparse.Namespace, kwargs: dict[str, typing.Any]) -> None:
         """Process custom --grace-period, --host, --port and --unit
         arguments."""
         cls.grace_period = args.grace_period
@@ -166,9 +177,7 @@ class MTAirCompressorCsc(salobj.ConfigurableCsc):
         if self.grace_period is None:
             self.grace_period = our_instance.get("grace_period", 3600)
         if self.host is None:
-            self.host = our_instance.get(
-                "host", f"m1m3cam-aircomp{self.salinfo.index:02d}.cp.lsst.org"
-            )
+            self.host = our_instance.get("host", f"m1m3cam-aircomp{self.salinfo.index:02d}.cp.lsst.org")
         if self.port is None:
             self.port = our_instance.get("port", 502)
         if self.unit is None:
@@ -210,8 +219,7 @@ class MTAirCompressorCsc(salobj.ConfigurableCsc):
                     self.log.error(str(exception))
                 if self._failed_tai is None:
                     self.log.warning(
-                        "Lost compressor connection, will try to reconnect for"
-                        f" {self.grace_period} seconds"
+                        f"Lost compressor connection, will try to reconnect for {self.grace_period} seconds"
                     )
                     self._failed_tai = utils.current_tai()
                 return
@@ -459,48 +467,40 @@ class MTAirCompressorCsc(salobj.ConfigurableCsc):
         """Read compressor analog (telemetry-worth) data."""
         assert self.model is not None
         analog = await self.model.get_analog_data()
-        # skip analog[8], Compressor power consumption, not available on the
-        # compressor
-        del analog[8]
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            analog, wordorder=Endian.BIG, byteorder=Endian.BIG
-        )
 
         await self.tel_analogData.set_write(
             force_output=True,
-            waterLevel=decoder.decode_16bit_int(),
-            targetSpeed=decoder.decode_16bit_uint(),
-            motorCurrent=decoder.decode_16bit_uint() / 10.0,
-            heatsinkTemperature=decoder.decode_16bit_int(),
-            dclinkVoltage=decoder.decode_16bit_uint(),
-            motorSpeedPercentage=decoder.decode_16bit_uint(),
-            motorSpeedRPM=decoder.decode_16bit_uint(),
-            motorInput=decoder.decode_16bit_uint() / 10.0,
-            # unavailable on LRS model - see above for analog reduction
-            # compressorPowerConsumption=decoder.decode_16bit_uint() / 10.0,
-            compressorVolumePercentage=decoder.decode_16bit_uint(),
-            compressorVolume=decoder.decode_16bit_uint() / 10.0,
-            groupVolume=decoder.decode_16bit_uint() / 10.0,
-            stage1OutputPressure=decoder.decode_16bit_int(),
-            linePressure=decoder.decode_16bit_int(),
-            stage1OutputTemperature=decoder.decode_16bit_int(),
+            waterLevel=decode_int16(analog[0]),
+            targetSpeed=decode_uint16(analog[1]),
+            motorCurrent=decode_uint16(analog[2]) / 10.0,
+            heatsinkTemperature=decode_int16(analog[3]),
+            dclinkVoltage=decode_uint16(analog[4]),
+            motorSpeedPercentage=decode_uint16(analog[5]),
+            motorSpeedRPM=decode_uint16(analog[6]),
+            motorInput=decode_uint16(analog[7]) / 10.0,
+            # skip analog[8], Compressor power consumption, not available on
+            # the compressor
+            # compressorPowerConsumption=decode_uint16(analog[8]) / 10.0,
+            compressorVolumePercentage=decode_uint16(analog[9]),
+            compressorVolume=decode_uint16(analog[10]) / 10.0,
+            groupVolume=decode_uint16(analog[11]) / 10.0,
+            stage1OutputPressure=decode_int16(analog[12]),
+            linePressure=decode_int16(analog[13]),
+            stage1OutputTemperature=decode_int16(analog[14]),
         )
 
     async def update_timer(self) -> None:
         """Read compressors timers."""
         assert self.model is not None
         timers = await self.model.get_timers()
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            timers, wordorder=Endian.BIG, byteorder=Endian.BIG
-        )
 
         await self.evt_timerInfo.set_write(
-            runningHours=decoder.decode_32bit_uint(),
-            loadedHours=decoder.decode_32bit_uint(),
-            lowestServiceCounter=decoder.decode_16bit_int(),
-            runOnTimer=decoder.decode_16bit_int(),
+            runningHours=decode_uint32(timers[0]),
+            loadedHours=decode_uint32(timers[1]),
+            lowestServiceCounter=decode_int16(timers[2]),
+            runOnTimer=decode_int16(timers[3]),
             # unavailable on LRS model
-            # loadedHours50Percent=decoder.decode_32bit_int()),
+            # loadedHours50Percent=decode_int32(timers[4])),
         )
 
     async def telemetry_loop(self) -> None:
@@ -527,6 +527,10 @@ class MTAirCompressorCsc(salobj.ConfigurableCsc):
             await self.log_modbus_exception(ex)
 
         except Exception as ex:
+            # print traceback on stdout first
+            import traceback
+
+            traceback.print_exception(ex)
             await self.fault(1, f"Error in telemetry loop: {ex}, type {type(ex)}")
 
     async def poll_loop(self) -> None:
