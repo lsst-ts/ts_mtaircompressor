@@ -4,6 +4,11 @@
 Version History
 ===============
 
+v1.5.9
+------
+
+* Update libraries (pymodbus) and build dependencies
+
 v1.5.8
 ------
 

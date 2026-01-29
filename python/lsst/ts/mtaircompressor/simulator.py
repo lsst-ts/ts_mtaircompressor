@@ -25,11 +25,11 @@ import asyncio
 import socket
 
 from pymodbus.datastore import (
+    ModbusDeviceContext,
     ModbusSequentialDataBlock,
     ModbusServerContext,
-    ModbusSlaveContext,
 )
-from pymodbus.server.async_io import ModbusTcpServer
+from pymodbus.server import ModbusTcpServer
 
 from .aircompressor_model import Register
 
@@ -42,12 +42,8 @@ class SimulatedHrBlock(ModbusSequentialDataBlock):
     def setValues(self, address: int, values: list[int]) -> None:
         # there is mismatch in indexing, + 1 is needed on Register.xxx side
         if address == Register.REMOTE_CMD + 1:
-            super().setValues(
-                Register.STATUS + 1, [0x02] if values[0] == 0xFF01 else [0x01]
-            )
-            super().setValues(
-                Register.INHIBIT + 1, [0x00] if values[0] == 0xFF01 else [0x01]
-            )
+            super().setValues(Register.STATUS + 1, [0x02] if values[0] == 0xFF01 else [0x01])
+            super().setValues(Register.INHIBIT + 1, [0x00] if values[0] == 0xFF01 else [0x01])
         super().setValues(address, values)
 
 
@@ -60,8 +56,8 @@ def create_server() -> ModbusTcpServer:
     server : `ModbusTcpServer`
         Created server instance.
     """
-    store = ModbusSlaveContext(hr=SimulatedHrBlock())
-    context = ModbusServerContext(slaves=store, single=True)
+    store = ModbusDeviceContext(hr=SimulatedHrBlock())
+    context = ModbusServerContext(devices=store, single=True)
 
     return ModbusTcpServer(context)
 
