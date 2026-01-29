@@ -90,9 +90,7 @@ class MTAirCompressorModel:
         self.connection = connection
         self.unit = unit
 
-    async def set_register(
-        self, address: int, value: int, error_status: str
-    ) -> pymodbus.pdu.ModbusResponse:
+    async def set_register(self, address: int, value: int, error_status: str) -> None:
         """Set ModBus register value.
 
         Parameters
@@ -102,57 +100,25 @@ class MTAirCompressorModel:
         value : `int(0xffff)`
             New register value (16-bit integer).
 
-        Returns
-        -------
-        response : `class`
-            PyModbus response to call.
-
         Raises
         ------
         ModbusException
             When register cannot be set.
         """
-        result = await self.connection.write_registers(
-            address, [value], slave=self.unit
-        )
-        if isinstance(result, pymodbus.pdu.ExceptionResponse):
-            # Slave Device Failure - https://www.simplymodbus.ca/exceptions.htm
-            # This means the register cannot be set. Most likely as it's
-            # read-only. compressor is not in remote mode.
-            # TODO replace with pymodbus constant after
-            # https://github.com/pymodbus-dev/pymodbus/issues/1300 is handled
-            if result.exception_code == 4:
-                raise pymodbus.exceptions.ModbusException(
-                    f"Cannot set register at address {address} to {value} "
-                    f"({value:X}), most likely compressor isn't in remote mode."
-                )
-            raise pymodbus.exceptions.ModbusException(str(result))
-        return result
+        await self.connection.write_registers(address, [value], device_id=self.unit)
 
-    async def reset(self) -> pymodbus.pdu.ModbusResponse:
+    async def reset(self) -> None:
         """Reset compressor errors.
-
-        Returns
-        -------
-        response : `class`
-            PyModbus response to call to set reset register.
 
         Raises
         ------
         ModbusException
             When reset cannot be performed.
         """
-        return await self.set_register(
-            Register.RESET, 0xFF01, "Cannot reset compressor"
-        )
+        await self.set_register(Register.RESET, 0xFF01, "Cannot reset compressor")
 
-    async def power_on(self) -> pymodbus.pdu.ModbusResponse:
+    async def power_on(self) -> None:
         """Power on compressor.
-
-        Returns
-        -------
-        response : `class`
-            PyModbus response to call to power on compressor.
 
         Raises
         ------
@@ -161,17 +127,10 @@ class MTAirCompressorModel:
             configured to operate remotely - original_code in return then
             equals 16.
         """
-        return await self.set_register(
-            Register.REMOTE_CMD, 0xFF01, "Cannot power on compressor"
-        )
+        await self.set_register(Register.REMOTE_CMD, 0xFF01, "Cannot power on compressor")
 
-    async def power_off(self) -> pymodbus.pdu.ModbusResponse:
+    async def power_off(self) -> None:
         """Power off compressor.
-
-        Returns
-        -------
-        response : `class`
-            PyModbus response to call to power off compressor.
 
         Raises
         ------
@@ -180,13 +139,9 @@ class MTAirCompressorModel:
             configured to operate remotely - original_code in return then
             equals 16.
         """
-        return await self.set_register(
-            Register.REMOTE_CMD, 0xFF00, "Cannot power down compressor"
-        )
+        await self.set_register(Register.REMOTE_CMD, 0xFF00, "Cannot power down compressor")
 
-    async def get_registers(
-        self, address: int, count: int, error_status: str
-    ) -> list[int]:
+    async def get_registers(self, address: int, count: int, error_status: str) -> list[int]:
         """
         Returns registers.
 
@@ -209,10 +164,8 @@ class MTAirCompressorModel:
         ModbusException
             When register(s) cannot be retrieved.
         """
-        result = await self.connection.read_holding_registers(
-            address, count, slave=self.unit
-        )
-        if isinstance(result, pymodbus.pdu.ExceptionResponse):
+        result = await self.connection.read_holding_registers(address, count=count, device_id=self.unit)
+        if result.isError():
             raise pymodbus.exceptions.ModbusException(str(result))
         return result.registers
 
@@ -248,9 +201,7 @@ class MTAirCompressorModel:
         ModbusException
             When registers cannot be retrieved.
         """
-        return await self.get_registers(
-            Register.ERROR_E400, 16, "Cannot read error registers"
-        )
+        return await self.get_registers(Register.ERROR_E400, 16, "Cannot read error registers")
 
     async def get_compressor_info(self) -> list[int]:
         """Read compressor info - 23 registers starting from address 0x63.
@@ -267,9 +218,7 @@ class MTAirCompressorModel:
         ModbusException
             When registers cannot be retrieved.
         """
-        return await self.get_registers(
-            Register.SOFTWARE_VERSION, 23, "Cannot read compressor info"
-        )
+        return await self.get_registers(Register.SOFTWARE_VERSION, 23, "Cannot read compressor info")
 
     async def get_analog_data(self) -> list[int]:
         """Read compressor info - register 0x1E and 14 registers starting from
@@ -290,9 +239,7 @@ class MTAirCompressorModel:
         """
         return await self.get_registers(
             Register.WATER_LEVEL, 1, "Cannot read water level"
-        ) + await self.get_registers(
-            Register.TARGET_SPEED, 14, "Cannot read analog data"
-        )
+        ) + await self.get_registers(Register.TARGET_SPEED, 14, "Cannot read analog data")
 
     async def get_timers(self) -> list[int]:
         """Read compressor timers - 8 registers starting from address 0x39.

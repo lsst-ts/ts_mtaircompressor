@@ -7,9 +7,7 @@ from lsst.ts import mtaircompressor, salobj
 CONFIG_DIR = pathlib.Path(__file__).parent / "data" / "config"
 
 
-class MTAirCompressorCscTestCase(
-    salobj.BaseCscTestCase, unittest.IsolatedAsyncioTestCase
-):
+class MTAirCompressorCscTestCase(salobj.BaseCscTestCase, unittest.IsolatedAsyncioTestCase):
     def basic_make_csc(
         self,
         initial_state: salobj.State,
@@ -27,9 +25,7 @@ class MTAirCompressorCscTestCase(
 
     async def test_standard_state_transitions(self) -> None:
         async with self.make_csc(index=2, initial_state=salobj.State.STANDBY):
-            await self.check_standard_state_transitions(
-                enabled_commands=["powerOn", "powerOff", "reset"]
-            )
+            await self.check_standard_state_transitions(enabled_commands=["powerOn", "powerOff", "reset"])
 
     async def test_bin_script(self) -> None:
         await self.check_bin_script(
