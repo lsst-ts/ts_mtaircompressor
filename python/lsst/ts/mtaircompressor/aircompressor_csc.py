@@ -58,9 +58,9 @@ def decode_uint16(reg: int) -> int:
     )
 
 
-def decode_uint32(reg: int) -> int:
+def decode_uint32(reg1: int, reg2: int) -> int:
     return ModbusClient.convert_from_registers(
-        [reg], data_type=ModbusClient.DATATYPE.UINT32, word_order="big"
+        [reg1, reg2], data_type=ModbusClient.DATATYPE.UINT32, word_order="big"
     )
 
 
@@ -495,12 +495,12 @@ class MTAirCompressorCsc(salobj.ConfigurableCsc):
         timers = await self.model.get_timers()
 
         await self.evt_timerInfo.set_write(
-            runningHours=decode_uint32(timers[0]),
-            loadedHours=decode_uint32(timers[1]),
-            lowestServiceCounter=decode_int16(timers[2]),
-            runOnTimer=decode_int16(timers[3]),
+            runningHours=decode_uint32(timers[0], timers[1]),
+            loadedHours=decode_uint32(timers[2], timers[3]),
+            lowestServiceCounter=decode_int16(timers[4]),
+            runOnTimer=decode_int16(timers[5]),
             # unavailable on LRS model
-            # loadedHours50Percent=decode_int32(timers[4])),
+            # loadedHours50Percent=decode_int32(timers[6], timers[7])),
         )
 
     async def telemetry_loop(self) -> None:

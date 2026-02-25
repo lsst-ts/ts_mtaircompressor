@@ -4,6 +4,11 @@
 Version History
 ===============
 
+v1.5.10
+-------
+
+* Fix INT32 readouts in a new PyModbus library.
+
 v1.5.9
 ------
 
