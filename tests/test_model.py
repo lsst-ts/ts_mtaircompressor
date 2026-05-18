@@ -40,3 +40,33 @@ class MTAirCompressorModelTestCase(unittest.IsolatedAsyncioTestCase):
         model = mtaircompressor.MTAirCompressorModel(self.client, 1)
         analog_data = await model.get_analog_data()
         assert analog_data[0:10] == [2, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+
+    async def test_utils(self) -> None:
+        model = mtaircompressor.MTAirCompressorModel(self.client, 1)
+        # simulated string is "LSST Test Compressor 42", but somehow isn't
+        # working right in PyModbus yet
+        assert await model.get_compressor_info() == [
+            0x4C53,
+            0x5354,
+            0x2054,
+            0x6573,
+            0x7420,
+            0x436F,
+            0x6D70,
+            0x7265,
+            0x7373,
+            0x6F72,
+            0x2034,
+            0x3200,
+            0x4C53,
+            0x5354,
+            0x2054,
+            0x6573,
+            0x7420,
+            0x436F,
+            0x6D70,
+            0x7265,
+            0x7373,
+            0x6F72,
+            0x2034,
+        ]

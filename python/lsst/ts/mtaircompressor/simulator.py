@@ -24,27 +24,10 @@ __all__ = ["create_server", "create_server_and_run_on_background"]
 import asyncio
 import socket
 
-from pymodbus.datastore import (
-    ModbusDeviceContext,
-    ModbusSequentialDataBlock,
-    ModbusServerContext,
-)
 from pymodbus.server import ModbusTcpServer
+from pymodbus.simulator import DataType, SimData, SimDevice
 
 from .aircompressor_model import Register
-
-
-class SimulatedHrBlock(ModbusSequentialDataBlock):
-    def __init__(self) -> None:
-        block = [0] * 0x1E + list(range(1, 20)) + [0x01, 0x0, 0x01] + [0] * 0x120
-        super().__init__(0, block)
-
-    def setValues(self, address: int, values: list[int]) -> None:
-        # there is mismatch in indexing, + 1 is needed on Register.xxx side
-        if address == Register.REMOTE_CMD + 1:
-            super().setValues(Register.STATUS + 1, [0x02] if values[0] == 0xFF01 else [0x01])
-            super().setValues(Register.INHIBIT + 1, [0x00] if values[0] == 0xFF01 else [0x01])
-        super().setValues(address, values)
 
 
 def create_server() -> ModbusTcpServer:
@@ -56,10 +39,57 @@ def create_server() -> ModbusTcpServer:
     server : `ModbusTcpServer`
         Created server instance.
     """
-    store = ModbusDeviceContext(hr=SimulatedHrBlock())
-    context = ModbusServerContext(devices=store, single=True)
+    # 1. Define the initial data block using SimData
+    sim_data = [
+        SimData(address=Register.WATER_LEVEL, values=list(range(2, 20)), datatype=DataType.REGISTERS),
+        SimData(address=Register.STATUS, values=[0x01, 0x00, 0x01], datatype=DataType.REGISTERS),
+        SimData(address=Register.ERROR_E400, values=list(range(100, 116)), datatype=DataType.REGISTERS),
+        SimData(
+            address=Register.SOFTWARE_VERSION,
+            values="LSST Test Compressor 42",
+            count=2,
+            datatype=DataType.STRING,
+        ),
+        SimData(address=Register.SERIAL_NUMER, values="v0.0.0", count=2, datatype=DataType.STRING),
+        SimData(address=Register.REMOTE_CMD, values=0, count=1, datatype=DataType.REGISTERS),
+        SimData(address=Register.RESET, values=0, count=1, datatype=DataType.REGISTERS),
+    ]
 
-    return ModbusTcpServer(context)
+    # We need a reference to the server inside the callback to update secondary
+    # registers.  A mutable list allows us to inject the server instance after
+    # it is instantiated.
+    server_ref: list[ModbusTcpServer] = []
+
+    # 2. Use the SimDevice `action` callback to intercept writes
+    async def intercept_remote_cmd(
+        device_id: int,
+        func_code: int,
+        address: int,
+        count: int,
+        old_values: list[int],
+        new_values: list[int] | list[bool] | None,
+    ) -> None:
+        # new_values is only populated on write requests.
+        if new_values is not None and address == Register.REMOTE_CMD:
+            val = new_values[0]
+            status_val = [0x02] if val == 0xFF01 else [0x01]
+            inhibit_val = [0x00] if val == 0xFF01 else [0x01]
+
+            if server_ref:
+                srv = server_ref[0]
+                # Update the side-effect registers.
+                # Function code 3 is typically used to represent holding
+                # registers internally.
+                await srv.async_setValues(device_id, 3, Register.STATUS, status_val)
+                await srv.async_setValues(device_id, 3, Register.INHIBIT, inhibit_val)
+
+    sim_device = SimDevice(id=0, simdata=sim_data, action=intercept_remote_cmd)
+
+    # 4. ModbusTcpServer can now take a SimDevice directly as its context
+    server = ModbusTcpServer(context=sim_device)
+    server_ref.append(server)
+
+    return server
 
 
 async def create_server_and_run_on_background() -> tuple[
@@ -84,7 +114,7 @@ async def create_server_and_run_on_background() -> tuple[
     server = create_server()
 
     # make sure socket is created and listen for incoming connection, so we can
-    # get it address
+    # get its address
     await server.listen()
 
     simulator_task = asyncio.create_task(server.serve_forever())
@@ -94,7 +124,7 @@ async def create_server_and_run_on_background() -> tuple[
         raise RuntimeError(
             "The simulator cannot get data of any connected socket. Most likely "
             "the previous tests failed, leaving simulator server listening for "
-            "the incoming connectons."
+            "the incoming connections."
         )
     host, port = socket.getnameinfo(st.getsockname(), socket.NI_NUMERICSERV)
     return server, simulator_task, host, int(port)
