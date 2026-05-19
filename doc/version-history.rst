@@ -4,6 +4,11 @@
 Version History
 ===============
 
+v1.5.11
+-------
+
+* Uses PyModbus 4.0 SimData/SimDevice.
+
 v1.5.10
 -------
 
